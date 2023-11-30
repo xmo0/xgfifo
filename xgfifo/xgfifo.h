@@ -1,52 +1,52 @@
 #ifndef XGFIFO_H
 #define XGFIFO_H
 
+#include <stdbool.h>
 #include <pthread.h>
 
-#define XFIFO_PTR_OP
+typedef unsigned char byte;
 
-struct xfifo
+typedef struct xgfifo
 {
-    unsigned char *data; /* the buffer holding the data */
-    unsigned int size;   /* the size of the allocated buffer, should be power of 2 */
-    unsigned int mask;   // size-1
-    unsigned int in;     /* data is added at offset (in % size) */
-    unsigned int out;    /* data is extracted from off. (out % size) */
-    // unsigned int is;     //in-shadow, in % size
-    // unsigned int os;     //out-shadow, out % size
-    // unsigned int len_data; /* 已经填入的数据长度 */
-    // unsigned int len_left; /* 可用空间          */
+    byte *data;  /* the buffer holding the data */
+    size_t size; /* the size of the allocated buffer, should be power of 2 */
+    size_t mask; /* mask = size - 1 */
+    size_t in;   /* data is added at offset (in % size) */
+    size_t out;  /* data is extracted from off. (out % size) */
     pthread_mutex_t mutex;
+} xgff_t;
 
-    //-------------------- 第二种操作方式专用
-    char *ptr_i;        /* 写入位置 */
-    char *ptr_o;        /* 读取位置 */
-    unsigned int len_i; /* 外部通过ptr_i可写入的最大长度 */
-    unsigned int len_o; /* 外部通过ptr_o可读取的最大长度 */
-};
+/**
+ *  下面3个函数用于建立数据结构、销毁数据结构、清空数据
+ */
+int xgff_init(xgff_t *fifo, int size); // 建立数据结构
+int xgff_free(xgff_t *fifo);           // 销毁数据结构
+int xgff_clear(xgff_t *fifo);          // 清空内部数据
 
-int xfifo_init(struct xfifo *fifo, unsigned int size);
+/**
+ *  下面4个函数是基础的使用方式，适用于小数据量的处理，
+ *  优点是使用直观，缺点是（可能）存在额外的内存拷贝
+ */
+int xgff_getItemLen(xgff_t *fifo);                      // 获取当前数据长度
+int xgff_getLeftLen(xgff_t *fifo);                      // 获取剩余可用长度
+int xgff_wr(xgff_t *fifo, const void *buf, size_t len); // 写入数据
+int xgff_rd(xgff_t *fifo, void *buf, size_t len);       // 读取数据
 
-int xfifo_34full(struct xfifo *fifo, int do_print);
+/**
+ *  下面4个函数是另外一种使用方式，适用于大数据量的处理，
+ *  优点是不存在额外的数据拷贝，缺点是使用方式不直观
+ */
+int xgff_getBlockWrInfo(xgff_t *fifo, byte **ptr, size_t *len);
+int xgff_getBlockRdInfo(xgff_t *fifo, byte **ptr, size_t *len);
+int xgff_ackBlockWr(xgff_t *fifo, size_t len);
+int xgff_ackBlockRd(xgff_t *fifo, size_t len);
 
-int xfifo_empty(struct xfifo *fifo);
-
-//---------- 下面4个函数是第1种处理机制
-
-int xfifo_put(struct xfifo *fifo, const void *buf, unsigned int len);
-
-int xfifo_get(struct xfifo *fifo, void *buf, unsigned int len);
-
-int xfifo_getlen(struct xfifo *fifo);
-
-int xfifo_getleftlen(struct xfifo *fifo);
-
-//---------- 下面3个函数是第2种处理机制
-
-static void refresh_len(struct xfifo *fifo, unsigned int in, unsigned int out);
-
-void xfifo_wr_ack(struct xfifo *fifo, unsigned int offset);
-
-void xfifo_rd_ack(struct xfifo *fifo, unsigned int offset);
+/**
+ *  一组与fifo容量变化相关的回调函数，供用户自定义实现所期望的功能
+ */
+// xgff_full
+// xgff_threeQuarter
+// xgff_aHalf
+int xgff_34full(xgff_t *fifo, bool do_print);
 
 #endif // XGFIFO_H
