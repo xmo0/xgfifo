@@ -4,6 +4,9 @@
 #include <unistd.h>
 #include "xgfifo.h"
 
+/*******************************************************************************
+								 宏定义
+*******************************************************************************/
 #define min(a, b) ((a) < (b) ? (a) : (b))
 #define max(a, b) ((a) > (b) ? (a) : (b))
 
@@ -23,6 +26,15 @@
 		return -1;                       \
 	}
 
+/*******************************************************************************
+							全局变量 & 函数前置声明
+*******************************************************************************/
+static int show_footprint(xgff_t *fifo);
+
+/*******************************************************************************
+								  函数实现
+*******************************************************************************/
+
 int xgff_init(xgff_t *fifo, int size)
 {
 	xgff_check_fifo_ptr(fifo);
@@ -30,7 +42,7 @@ int xgff_init(xgff_t *fifo, int size)
 	// 检查size，要求不小于4，不大于1<<30，并且为2的幂
 	// 在我的典型工作环境下，int为32位，取值范围是-2^^31 ~ +2^^31-1
 	// 1<<30 等同于1GiB，一般不会用到这么大
-	if (size < 4 || size > 1 << 30 || (size & size - 1) != 0)
+	if (size < 8 || size > 1 << 30 || (size & size - 1) != 0)
 	{
 		xgff_error("invalid argument.");
 		return -1;
@@ -79,6 +91,8 @@ int xgff_clear(xgff_t *fifo)
 	pthread_mutex_unlock(&fifo->mutex);
 }
 
+//----------------------------------------------- basic functions
+
 int xgff_getItemLen(xgff_t *fifo)
 {
 	xgff_check_fifo_ptr(fifo);
@@ -100,7 +114,7 @@ int xgff_getLeftLen(xgff_t *fifo)
 	pthread_mutex_lock(&fifo->mutex);
 	// 此处in可能已经溢出，回到一个较小的数，而out还没溢出
 	// 即使遇到这种状况，下面的语句仍然是正确的
-	left_len = fifo->size - (fifo->in - fifo->out);
+	left_len = fifo->size - (fifo->in - fifo->out) - 1;
 	pthread_mutex_unlock(&fifo->mutex);
 
 	return left_len;
@@ -117,7 +131,7 @@ int xgff_wr(xgff_t *fifo, const void *buf, size_t len)
 	size_t lenToCopy;
 
 	// 在用户要求数量和fifo剩余容量间取较小值
-	len = min(len, fifo->size - (fifo->in - fifo->out));
+	len = min(len, fifo->size - (fifo->in - fifo->out) - 1);
 
 	/* first put the data starting from fifo->in to buffer end */
 	lenToCopy = min(len, fifo->size - (fifo->in & fifo->mask));
@@ -136,7 +150,9 @@ int xgff_wr(xgff_t *fifo, const void *buf, size_t len)
 	// printf("fifo len: %d, fifo_in = %u, fifo_out = %u\n",len,fifo->in,fifo->out);
 
 	pthread_mutex_unlock(&fifo->mutex);
-
+#if XGFF_SHOW_FOOTPRINT
+	show_footprint(fifo);
+#endif
 	return len;
 }
 
@@ -157,10 +173,13 @@ int xgff_rd(xgff_t *fifo, void *buf, size_t len)
 	fifo->out += len;
 
 	pthread_mutex_unlock(&fifo->mutex);
+#if XGFF_SHOW_FOOTPRINT
+	show_footprint(fifo);
+#endif
 	return len;
 }
 
-//------------------------------------------------------------------------------
+//----------------------------------------------- block functions
 
 int xgff_getBlockWrInfo(xgff_t *fifo, byte **ptr, size_t *len)
 {
@@ -214,7 +233,7 @@ int xgff_ackBlockRd(xgff_t *fifo, size_t len)
 	pthread_mutex_unlock(&fifo->mutex);
 }
 
-//------------------------------------------------------------------------------
+//----------------------------------------------- callbacks
 
 /**
  * 	@ret 1 has been 3/4 full
@@ -237,5 +256,69 @@ int xgff_34full(xgff_t *fifo, bool do_print)
 	{
 		xgff_cprint(do_print, "50%%\n");
 		return 0;
+	}
+}
+
+//----------------------------------------------- static functions
+
+/**
+ * 	以可视化形式显示fifo的占用位置、占用比例
+ * 	为空的时候为绿色，里边有数据的位置显示红色
+ */
+static int show_footprint(xgff_t *fifo)
+{
+	// static const char *level_colors[] = {
+	//     "\x1b[94m", "\x1b[36m", "\x1b[32m", "\x1b[33m", "\x1b[31m", "\x1b[35m"};
+	xgff_check_fifo_ptr(fifo);
+
+	const size_t seg_num = 16; // 分成16段来显示
+	size_t div;				   // 每一段dash代表的字节数
+	size_t pos_in, pos_out;	   // 表示shadow_in/shadow_out所处偏移的段索引
+	if (fifo->size >= seg_num)
+		div = fifo->size >> 4;
+	else
+		return 0;
+
+	size_t percentage = (fifo->in - fifo->out) * 100 / fifo->size;
+	for (pos_in = seg_num - 1; pos_in > 0; pos_in--)
+	{
+		if (shadow_in > div * pos_in) // pos_in对应的'-'应该变红色
+			break;
+	}
+	for (pos_out = seg_num - 1; pos_out > 0; pos_out--)
+	{
+		if (shadow_out >= div * pos_out) // pos_out对应的'-'应该变红色
+			break;
+	}
+
+	// printf("shd_in: %ld, shd_out: %ld\n", shadow_in, shadow_out);
+	// printf("pos_in: %ld, pos_out: %ld\n", pos_in, pos_out);
+	if (shadow_out == shadow_in)
+		printf("\x1b[32m ---- ---- ---- ----\x1b[0m  0%%\n");
+	else if (shadow_out < shadow_in)
+	{
+		for (int i = 0; i < seg_num; i++)
+		{
+			if (i % 4 == 0) // i = 0, 4, 8, 12
+				printf(" ");
+			if (i >= pos_out && i <= pos_in)
+				printf("\x1b[31m-\x1b[0m");
+			else
+				printf("\x1b[32m-\x1b[0m");
+		}
+		printf(" %2ld%%\n", percentage);
+	}
+	else if (shadow_out > shadow_in)
+	{
+		for (int i = 0; i < seg_num; i++)
+		{
+			if (i % 4 == 0) // i = 0, 4, 8, 12
+				printf(" ");
+			if (i <= pos_in || i >= pos_out)
+				printf("\x1b[31m-\x1b[0m");
+			else
+				printf("\x1b[32m-\x1b[0m");
+		}
+		printf(" %2ld%%\n", percentage);
 	}
 }

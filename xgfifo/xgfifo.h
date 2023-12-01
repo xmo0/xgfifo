@@ -4,6 +4,10 @@
 #include <stdbool.h>
 #include <pthread.h>
 
+#define XGFF_SHOW_FOOTPRINT 1 // 调试阶段使用，使能后会使用'-'来显示fifo占用情况
+                              // 显示样式如下（红绿双色区分对应的位置是否有数据）
+                              //  ---- ---- ---- ---- 31%
+
 typedef unsigned char byte;
 
 typedef struct xgfifo
@@ -13,6 +17,7 @@ typedef struct xgfifo
     size_t mask; /* mask = size - 1 */
     size_t in;   /* data is added at offset (in % size) */
     size_t out;  /* data is extracted from off. (out % size) */
+
     pthread_mutex_t mutex;
 } xgff_t;
 
@@ -44,9 +49,6 @@ int xgff_ackBlockRd(xgff_t *fifo, size_t len);
 /**
  *  一组与fifo容量变化相关的回调函数，供用户自定义实现所期望的功能
  */
-// xgff_full
-// xgff_threeQuarter
-// xgff_aHalf
 int xgff_34full(xgff_t *fifo, bool do_print);
 
 #endif // XGFIFO_H
