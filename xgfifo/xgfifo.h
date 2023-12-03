@@ -17,16 +17,20 @@ typedef struct xgfifo
     size_t mask; /* mask = size - 1 */
     size_t in;   /* data is added at offset (in % size) */
     size_t out;  /* data is extracted from off. (out % size) */
-
     pthread_mutex_t mutex;
+
+    int (*footprint_full)(void *p);
+    int (*footprint_75pct)(void *p);
+    int (*footprint_50pct)(void *p);
 } xgff_t;
 
 /**
  *  下面3个函数用于建立数据结构、销毁数据结构、清空数据
  */
-int xgff_init(xgff_t *fifo, int size); // 建立数据结构
-int xgff_free(xgff_t *fifo);           // 销毁数据结构
-int xgff_clear(xgff_t *fifo);          // 清空内部数据
+int xgff_init(xgff_t *fifo, int size);                       // 建立数据结构
+int xgff_free(xgff_t *fifo);                                 // 销毁数据结构
+int xgff_clear(xgff_t *fifo);                                // 清空内部数据
+int xgff_setCallbacks(xgff_t *fifo, int (*func[])(void *p)); // 设置回调函数
 
 /**
  *  下面4个函数是基础的使用方式，适用于小数据量的处理，

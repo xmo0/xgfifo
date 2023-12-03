@@ -91,6 +91,21 @@ int xgff_clear(xgff_t *fifo)
 	pthread_mutex_unlock(&fifo->mutex);
 }
 
+/**
+ *	@func 函数指针数组，
+ *      func[2]对应footprint_full
+ *      func[1]对应footprint_75pct
+ * 		func[0]对应footprint_50pct
+ */
+int xgff_setCallbacks(xgff_t *fifo, int (*func[])(void *p))
+{
+	xgff_check_fifo_ptr(fifo);
+
+	fifo->footprint_full = func[0];
+	fifo->footprint_75pct = func[1];
+	fifo->footprint_50pct = func[2];
+}
+
 //----------------------------------------------- basic functions
 
 int xgff_getItemLen(xgff_t *fifo)
@@ -148,6 +163,13 @@ int xgff_wr(xgff_t *fifo, const void *buf, size_t len)
 
 	// len = fifo->in - fifo->out;
 	// printf("fifo len: %d, fifo_in = %u, fifo_out = %u\n",len,fifo->in,fifo->out);
+	size_t left_len = fifo->size - (fifo->in - fifo->out) - 1;
+	if (left_len == 0)
+		fifo->footprint_full(NULL);
+	else if (left_len < (fifo->size >> 2))
+		fifo->footprint_75pct(NULL);
+	else if (left_len < (fifo->size >> 1))
+		fifo->footprint_50pct(NULL);
 
 	pthread_mutex_unlock(&fifo->mutex);
 #if XGFF_SHOW_FOOTPRINT
@@ -292,7 +314,7 @@ static int show_footprint(xgff_t *fifo)
 	}
 
 	// printf("shd_in: %ld, shd_out: %ld\n", shadow_in, shadow_out);
-	// printf("pos_in: %ld, pos_out: %ld\n", pos_in, pos_out);
+	printf("pos_in: %ld, pos_out: %ld\n", pos_in, pos_out);
 	if (shadow_out == shadow_in)
 		printf("\x1b[32m ---- ---- ---- ----\x1b[0m  0%%\n");
 	else if (shadow_out < shadow_in)
