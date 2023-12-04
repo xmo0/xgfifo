@@ -164,6 +164,13 @@ int xgff_wr(xgff_t *fifo, const void *buf, size_t len)
 	// len = fifo->in - fifo->out;
 	// printf("fifo len: %d, fifo_in = %u, fifo_out = %u\n",len,fifo->in,fifo->out);
 	size_t left_len = fifo->size - (fifo->in - fifo->out) - 1;
+
+	pthread_mutex_unlock(&fifo->mutex);
+
+#if XGFF_SHOW_FOOTPRINT
+	show_footprint(fifo);
+#endif
+
 	if (left_len == 0)
 		fifo->footprint_full(NULL);
 	else if (left_len < (fifo->size >> 2))
@@ -171,10 +178,6 @@ int xgff_wr(xgff_t *fifo, const void *buf, size_t len)
 	else if (left_len < (fifo->size >> 1))
 		fifo->footprint_50pct(NULL);
 
-	pthread_mutex_unlock(&fifo->mutex);
-#if XGFF_SHOW_FOOTPRINT
-	show_footprint(fifo);
-#endif
 	return len;
 }
 
@@ -289,8 +292,6 @@ int xgff_34full(xgff_t *fifo, bool do_print)
  */
 static int show_footprint(xgff_t *fifo)
 {
-	// static const char *level_colors[] = {
-	//     "\x1b[94m", "\x1b[36m", "\x1b[32m", "\x1b[33m", "\x1b[31m", "\x1b[35m"};
 	xgff_check_fifo_ptr(fifo);
 
 	const size_t seg_num = 16; // 分成16段来显示
@@ -302,10 +303,15 @@ static int show_footprint(xgff_t *fifo)
 		return 0;
 
 	size_t percentage = (fifo->in - fifo->out) * 100 / fifo->size;
-	for (pos_in = seg_num - 1; pos_in > 0; pos_in--)
+	for (pos_in = seg_num - 1; pos_in >= 0; pos_in--)
 	{
-		if (shadow_in > div * pos_in) // pos_in对应的'-'应该变红色
+		if (div * pos_in == shadow_in)
 			break;
+		if (div * pos_in < shadow_in) // pos_in对应的'-'不变红色
+		{
+			pos_in++;
+			break;
+		}
 	}
 	for (pos_out = seg_num - 1; pos_out > 0; pos_out--)
 	{
@@ -314,7 +320,7 @@ static int show_footprint(xgff_t *fifo)
 	}
 
 	// printf("shd_in: %ld, shd_out: %ld\n", shadow_in, shadow_out);
-	printf("pos_in: %ld, pos_out: %ld\n", pos_in, pos_out);
+	// printf("pos_in: %ld, pos_out: %ld\n", pos_in, pos_out);
 	if (shadow_out == shadow_in)
 		printf("\x1b[32m ---- ---- ---- ----\x1b[0m  0%%\n");
 	else if (shadow_out < shadow_in)
@@ -323,7 +329,7 @@ static int show_footprint(xgff_t *fifo)
 		{
 			if (i % 4 == 0) // i = 0, 4, 8, 12
 				printf(" ");
-			if (i >= pos_out && i <= pos_in)
+			if (i >= pos_out && i < pos_in)
 				printf("\x1b[31m-\x1b[0m");
 			else
 				printf("\x1b[32m-\x1b[0m");
@@ -336,7 +342,7 @@ static int show_footprint(xgff_t *fifo)
 		{
 			if (i % 4 == 0) // i = 0, 4, 8, 12
 				printf(" ");
-			if (i <= pos_in || i >= pos_out)
+			if (i < pos_in || i >= pos_out)
 				printf("\x1b[31m-\x1b[0m");
 			else
 				printf("\x1b[32m-\x1b[0m");
