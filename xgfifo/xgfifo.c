@@ -106,7 +106,7 @@ int xgff_setCallbacks(xgff_t *fifo, int (*func[])(void *p))
 	fifo->footprint_50pct = func[2];
 }
 
-//----------------------------------------------- basic functions
+//----------------------------------------------- basic operations
 
 int xgff_getItemLen(xgff_t *fifo)
 {
@@ -129,7 +129,7 @@ int xgff_getLeftLen(xgff_t *fifo)
 	pthread_mutex_lock(&fifo->mutex);
 	// 此处in可能已经溢出，回到一个较小的数，而out还没溢出
 	// 即使遇到这种状况，下面的语句仍然是正确的
-	left_len = fifo->size - (fifo->in - fifo->out) - 1;
+	left_len = fifo->size - (fifo->in - fifo->out);
 	pthread_mutex_unlock(&fifo->mutex);
 
 	return left_len;
@@ -146,7 +146,7 @@ int xgff_wr(xgff_t *fifo, const void *buf, size_t len)
 	size_t lenToCopy;
 
 	// 在用户要求数量和fifo剩余容量间取较小值
-	len = min(len, fifo->size - (fifo->in - fifo->out) - 1);
+	len = min(len, fifo->size - (fifo->in - fifo->out));
 
 	/* first put the data starting from fifo->in to buffer end */
 	lenToCopy = min(len, fifo->size - (fifo->in & fifo->mask));
@@ -163,7 +163,7 @@ int xgff_wr(xgff_t *fifo, const void *buf, size_t len)
 
 	// len = fifo->in - fifo->out;
 	// printf("fifo len: %d, fifo_in = %u, fifo_out = %u\n",len,fifo->in,fifo->out);
-	size_t left_len = fifo->size - (fifo->in - fifo->out) - 1;
+	size_t left_len = fifo->size - (fifo->in - fifo->out);
 
 	pthread_mutex_unlock(&fifo->mutex);
 
@@ -173,9 +173,9 @@ int xgff_wr(xgff_t *fifo, const void *buf, size_t len)
 
 	if (left_len == 0)
 		fifo->footprint_full(NULL);
-	else if (left_len < (fifo->size >> 2))
+	else if (left_len <= (fifo->size >> 2))
 		fifo->footprint_75pct(NULL);
-	else if (left_len < (fifo->size >> 1))
+	else if (left_len <= (fifo->size >> 1))
 		fifo->footprint_50pct(NULL);
 
 	return len;
@@ -204,7 +204,7 @@ int xgff_rd(xgff_t *fifo, void *buf, size_t len)
 	return len;
 }
 
-//----------------------------------------------- block functions
+//----------------------------------------------- block operations
 
 int xgff_getBlockWrInfo(xgff_t *fifo, byte **ptr, size_t *len)
 {
@@ -247,7 +247,19 @@ int xgff_ackBlockWr(xgff_t *fifo, size_t len)
 	xgff_check_fifo_ptr(fifo);
 
 	fifo->in += len;
+	size_t left_len = fifo->size - (fifo->in - fifo->out);
 	pthread_mutex_unlock(&fifo->mutex);
+
+#if XGFF_SHOW_FOOTPRINT
+	show_footprint(fifo);
+#endif
+
+	if (left_len == 0)
+		fifo->footprint_full(NULL);
+	else if (left_len <= (fifo->size >> 2))
+		fifo->footprint_75pct(NULL);
+	else if (left_len <= (fifo->size >> 1))
+		fifo->footprint_50pct(NULL);
 }
 
 int xgff_ackBlockRd(xgff_t *fifo, size_t len)
@@ -255,36 +267,15 @@ int xgff_ackBlockRd(xgff_t *fifo, size_t len)
 	xgff_check_fifo_ptr(fifo);
 
 	fifo->out += len;
-	pthread_mutex_unlock(&fifo->mutex);
-}
-
-//----------------------------------------------- callbacks
-
-/**
- * 	@ret 1 has been 3/4 full
- *		 0 has not been 3/4 full
- */
-int xgff_34full(xgff_t *fifo, bool do_print)
-{
-	unsigned int left_len;
-
-	pthread_mutex_lock(&fifo->mutex);
-	left_len = fifo->size - (fifo->in - fifo->out);
+	size_t left_len = fifo->size - (fifo->in - fifo->out);
 	pthread_mutex_unlock(&fifo->mutex);
 
-	if (left_len < ((fifo->size) >> 2))
-	{
-		xgff_cprint(do_print, "75%%\n");
-		return 1;
-	}
-	else if (left_len <= ((fifo->size) >> 1))
-	{
-		xgff_cprint(do_print, "50%%\n");
-		return 0;
-	}
+#if XGFF_SHOW_FOOTPRINT
+	show_footprint(fifo);
+#endif
 }
 
-//----------------------------------------------- static functions
+//----------------------------------------------- local functions
 
 /**
  * 	以可视化形式显示fifo的占用位置、占用比例
@@ -321,8 +312,10 @@ static int show_footprint(xgff_t *fifo)
 
 	// printf("shd_in: %ld, shd_out: %ld\n", shadow_in, shadow_out);
 	// printf("pos_in: %ld, pos_out: %ld\n", pos_in, pos_out);
-	if (shadow_out == shadow_in)
+	if (fifo->in == fifo->out) // empty
 		printf("\x1b[32m ---- ---- ---- ----\x1b[0m  0%%\n");
+	else if (shadow_out == shadow_in) // full
+		printf("\x1b[31m ---- ---- ---- ----\x1b[0m  0%%\n");
 	else if (shadow_out < shadow_in)
 	{
 		for (int i = 0; i < seg_num; i++)
