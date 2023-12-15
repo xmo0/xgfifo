@@ -43,7 +43,7 @@ int xgff_rd(xgff_t *fifo, void *buf, size_t len);       // 读取数据
 
 /**
  *  下面4个函数是另外一种使用方式，适用于大数据量的处理，
- *  优点是不存在额外的数据拷贝，缺点是使用方式不直观
+ *  优点是不存在额外的内存拷贝，缺点是使用方式不直观
  */
 int xgff_getBlockWrInfo(xgff_t *fifo, byte **ptr, size_t *len);
 int xgff_getBlockRdInfo(xgff_t *fifo, byte **ptr, size_t *len);

@@ -92,10 +92,10 @@ int xgff_clear(xgff_t *fifo)
 }
 
 /**
- *	@func 函数指针数组，
+ *  @func 函数指针数组，
  *      func[0]对应footprint_full
  *      func[1]对应footprint_75pct
- * 		func[2]对应footprint_50pct
+ *      func[2]对应footprint_50pct
  */
 int xgff_setCallbacks(xgff_t *fifo, int (*func[])(void *p))
 {
@@ -278,8 +278,8 @@ int xgff_ackBlockRd(xgff_t *fifo, size_t len)
 //----------------------------------------------- local functions
 
 /**
- * 	以可视化形式显示fifo的占用位置、占用比例
- * 	为空的时候为绿色，里边有数据的位置显示红色
+ *  以可视化形式显示fifo的占用位置、占用比例
+ *  为空的时候为绿色，里边有数据的位置显示红色
  */
 static int show_footprint(xgff_t *fifo)
 {
