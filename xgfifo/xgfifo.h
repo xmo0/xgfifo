@@ -50,9 +50,4 @@ int xgff_getBlockRdInfo(xgff_t *fifo, byte **ptr, size_t *len);
 int xgff_ackBlockWr(xgff_t *fifo, size_t len);
 int xgff_ackBlockRd(xgff_t *fifo, size_t len);
 
-/**
- *  一组与fifo容量变化相关的回调函数，供用户自定义实现所期望的功能
- */
-int xgff_34full(xgff_t *fifo, bool do_print);
-
 #endif // XGFIFO_H
