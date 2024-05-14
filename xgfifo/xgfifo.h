@@ -4,19 +4,21 @@
 #include <stdbool.h>
 #include <pthread.h>
 
-#define XGFF_SHOW_FOOTPRINT 1 // 调试阶段使用，使能后会使用'-'来显示fifo占用情况
-                              // 显示样式如下（红绿双色区分对应的位置是否有数据）
-                              //  ---- ---- ---- ---- 31%
+#ifndef XGFF_SHOW_FOOTPRINT
+// 调试阶段使用，使能后会使用'-'来显示fifo占用情况
+// 显示样式如下（红绿双色区分对应的位置是否有数据）
+//  ---- ---- ---- ---- 31%
+#define XGFF_SHOW_FOOTPRINT 1
+#endif
 
 typedef unsigned char byte;
 
-typedef struct xgfifo
-{
-    byte *data;  /* the buffer holding the data */
-    size_t size; /* the size of the allocated buffer, should be power of 2 */
-    size_t mask; /* mask = size - 1 */
-    size_t in;   /* data is added at offset (in % size) */
-    size_t out;  /* data is extracted from off. (out % size) */
+typedef struct xgfifo {
+    byte           *data; /* the buffer holding the data */
+    size_t          size; /* the size of the allocated buffer, should be power of 2 */
+    size_t          mask; /* mask = size - 1 */
+    size_t          in;   /* data is added at offset (in % size) */
+    size_t          out;  /* data is extracted from off. (out % size) */
     pthread_mutex_t mutex;
 
     int (*footprint_full)(void *p);
@@ -27,10 +29,11 @@ typedef struct xgfifo
 /**
  *  下面3个函数用于建立数据结构、销毁数据结构、清空数据
  */
-int xgff_init(xgff_t *fifo, int size);                       // 建立数据结构
-int xgff_free(xgff_t *fifo);                                 // 销毁数据结构
-int xgff_clear(xgff_t *fifo);                                // 清空内部数据
-int xgff_setCallbacks(xgff_t *fifo, int (*func[])(void *p)); // 设置回调函数
+int  xgff_init(xgff_t *fifo, int size);                       // 建立数据结构
+int  xgff_free(xgff_t *fifo);                                 // 销毁数据结构
+int  xgff_clear(xgff_t *fifo);                                // 清空内部数据
+int  xgff_setCallbacks(xgff_t *fifo, int (*func[])(void *p)); // 设置回调函数
+bool xgff_34full(xgff_t *fifo);
 
 /**
  *  下面4个函数是基础的使用方式，适用于小数据量的处理，

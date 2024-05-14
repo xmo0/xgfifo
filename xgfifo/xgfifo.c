@@ -10,7 +10,7 @@
 #define min(a, b) ((a) < (b) ? (a) : (b))
 #define max(a, b) ((a) > (b) ? (a) : (b))
 
-#define shadow_in (fifo->in & fifo->mask)
+#define shadow_in  (fifo->in & fifo->mask)
 #define shadow_out (fifo->out & fifo->mask)
 
 #define xgff_error(msg) printf("%s(): %s\n", __func__, (msg))
@@ -48,8 +48,8 @@ int xgff_init(xgff_t *fifo, int size)
         return -1;
     }
 
-    fifo->in = 0;
-    fifo->out = 0;
+    fifo->in   = 0;
+    fifo->out  = 0;
     fifo->size = size;
     fifo->mask = size - 1;
     fifo->data = malloc(size);
@@ -72,8 +72,8 @@ int xgff_free(xgff_t *fifo)
     xgff_check_fifo_ptr(fifo);
 
     pthread_mutex_lock(&fifo->mutex);
-    fifo->in = 0;
-    fifo->out = 0;
+    fifo->in   = 0;
+    fifo->out  = 0;
     fifo->size = 0;
     fifo->mask = 0;
     free(fifo->data);
@@ -86,7 +86,7 @@ int xgff_clear(xgff_t *fifo)
     xgff_check_fifo_ptr(fifo);
 
     pthread_mutex_lock(&fifo->mutex);
-    fifo->in = 0;
+    fifo->in  = 0;
     fifo->out = 0;
     pthread_mutex_unlock(&fifo->mutex);
 }
@@ -101,9 +101,21 @@ int xgff_setCallbacks(xgff_t *fifo, int (*func[])(void *p))
 {
     xgff_check_fifo_ptr(fifo);
 
-    fifo->footprint_full = func[0];
+    fifo->footprint_full  = func[0];
     fifo->footprint_75pct = func[1];
     fifo->footprint_50pct = func[2];
+}
+
+bool xgff_34full(xgff_t *fifo)
+{
+    if (xgff_getLeftLen(fifo) < fifo->size >> 2)
+    {
+        return true;
+    }
+    else
+    {
+        return false;
+    }
 }
 
 //----------------------------------------------- basic operations
@@ -172,11 +184,17 @@ int xgff_wr(xgff_t *fifo, const void *buf, size_t len)
 #endif
 
     if (left_len == 0)
+    {
         fifo->footprint_full(NULL);
+    }
     else if (left_len <= (fifo->size >> 2))
+    {
         fifo->footprint_75pct(NULL);
+    }
     else if (left_len <= (fifo->size >> 1))
+    {
         fifo->footprint_50pct(NULL);
+    }
 
     return len;
 }
@@ -210,36 +228,56 @@ int xgff_getBlockWrInfo(xgff_t *fifo, byte **ptr, size_t *len)
 {
     xgff_check_fifo_ptr(fifo);
     if (len == NULL)
+    {
         return -1;
+    }
 
     pthread_mutex_lock(&fifo->mutex);
     *ptr = fifo->data + shadow_in;
     if (shadow_in > shadow_out)
+    {
         *len = fifo->size - shadow_in;
+    }
     else if (shadow_in < shadow_out)
+    {
         *len = shadow_out - shadow_in;
+    }
     else if (fifo->in == fifo->out) // fifo empty
+    {
         *len = fifo->size - shadow_in;
+    }
     else // shadow_in == shadow_out, fifo full
+    {
         *len = 0;
+    }
 }
 
 int xgff_getBlockRdInfo(xgff_t *fifo, byte **ptr, size_t *len)
 {
     xgff_check_fifo_ptr(fifo);
     if (len == NULL)
+    {
         return -1;
+    }
 
     pthread_mutex_lock(&fifo->mutex);
     *ptr = fifo->data + shadow_out;
     if (shadow_in > shadow_out)
+    {
         *len = shadow_out - shadow_in;
+    }
     else if (shadow_in < shadow_out)
+    {
         *len = fifo->size - shadow_out;
+    }
     else if (fifo->in == fifo->out) // fifo empty
+    {
         *len = 0;
+    }
     else // shadow_in == shadow_out, fifo full
+    {
         *len = fifo->size - shadow_out;
+    }
 }
 
 int xgff_ackBlockWr(xgff_t *fifo, size_t len)
@@ -255,11 +293,17 @@ int xgff_ackBlockWr(xgff_t *fifo, size_t len)
 #endif
 
     if (left_len == 0)
+    {
         fifo->footprint_full(NULL);
+    }
     else if (left_len <= (fifo->size >> 2))
+    {
         fifo->footprint_75pct(NULL);
+    }
     else if (left_len <= (fifo->size >> 1))
+    {
         fifo->footprint_50pct(NULL);
+    }
 }
 
 int xgff_ackBlockRd(xgff_t *fifo, size_t len)
@@ -285,19 +329,25 @@ static int show_footprint(xgff_t *fifo)
 {
     xgff_check_fifo_ptr(fifo);
 
-    const size_t seg_num = 16; // 分成16段来显示
-    size_t div;                // 每一段dash代表的字节数
-    size_t pos_in, pos_out;    // 表示shadow_in/shadow_out所处偏移的段索引
+    const size_t seg_num = 16;    // 分成16段来显示
+    size_t       div;             // 每一段dash代表的字节数
+    size_t       pos_in, pos_out; // 表示shadow_in/shadow_out所处偏移的段索引
     if (fifo->size >= seg_num)
+    {
         div = fifo->size >> 4;
+    }
     else
+    {
         return 0;
+    }
 
     size_t percentage = (fifo->in - fifo->out) * 100 / fifo->size;
     for (pos_in = seg_num - 1; pos_in >= 0; pos_in--)
     {
         if (div * pos_in == shadow_in)
+        {
             break;
+        }
         if (div * pos_in < shadow_in) // pos_in对应的'-'不变红色
         {
             pos_in++;
@@ -307,25 +357,37 @@ static int show_footprint(xgff_t *fifo)
     for (pos_out = seg_num - 1; pos_out > 0; pos_out--)
     {
         if (shadow_out >= div * pos_out) // pos_out对应的'-'应该变红色
+        {
             break;
+        }
     }
 
     // printf("shd_in: %ld, shd_out: %ld\n", shadow_in, shadow_out);
     // printf("pos_in: %ld, pos_out: %ld\n", pos_in, pos_out);
     if (fifo->in == fifo->out) // empty
+    {
         printf("\x1b[32m ---- ---- ---- ----\x1b[0m  0%%\n");
+    }
     else if (shadow_out == shadow_in) // full
+    {
         printf("\x1b[31m ---- ---- ---- ----\x1b[0m  0%%\n");
+    }
     else if (shadow_out < shadow_in)
     {
         for (int i = 0; i < seg_num; i++)
         {
             if (i % 4 == 0) // i = 0, 4, 8, 12
+            {
                 printf(" ");
+            }
             if (i >= pos_out && i < pos_in)
+            {
                 printf("\x1b[31m-\x1b[0m");
+            }
             else
+            {
                 printf("\x1b[32m-\x1b[0m");
+            }
         }
         printf(" %2ld%%\n", percentage);
     }
@@ -334,11 +396,17 @@ static int show_footprint(xgff_t *fifo)
         for (int i = 0; i < seg_num; i++)
         {
             if (i % 4 == 0) // i = 0, 4, 8, 12
+            {
                 printf(" ");
+            }
             if (i < pos_in || i >= pos_out)
+            {
                 printf("\x1b[31m-\x1b[0m");
+            }
             else
+            {
                 printf("\x1b[32m-\x1b[0m");
+            }
         }
         printf(" %2ld%%\n", percentage);
     }
