@@ -13,6 +13,18 @@
 #define shadow_in  (fifo->in & fifo->mask)
 #define shadow_out (fifo->out & fifo->mask)
 
+#define lock()                           \
+    if (fifo->lockFn && fifo->mutex)     \
+    {                                    \
+        fifo->lockFn(true, fifo->mutex); \
+    }
+
+#define unlock()                          \
+    if (fifo->lockFn && fifo->mutex)      \
+    {                                     \
+        fifo->lockFn(false, fifo->mutex); \
+    }
+
 #define xgff_error(msg) printf("%s(): %s\n", __func__, (msg))
 
 #define xgff_cprint(condition, ...) \
@@ -59,36 +71,33 @@ int xgff_init(xgff_t *fifo, int size)
         xgff_error("malloc fail");
         exit(EXIT_FAILURE);
     }
-    if (pthread_mutex_init(&fifo->mutex, NULL) != 0)
-    {
-        xgff_error("init mutex fail");
-        free(fifo->data);
-        exit(EXIT_FAILURE);
-    }
+
+    fifo->mutex  = NULL;
+    fifo->lockFn = NULL;
 }
 
 int xgff_free(xgff_t *fifo)
 {
     xgff_check_fifo_ptr(fifo);
 
-    pthread_mutex_lock(&fifo->mutex);
+    lock(); // pthread_mutex_lock(&fifo->mutex);
     fifo->in   = 0;
     fifo->out  = 0;
     fifo->size = 0;
     fifo->mask = 0;
     free(fifo->data);
     fifo->data = NULL;
-    pthread_mutex_unlock(&fifo->mutex);
+    unlock(); // pthread_mutex_unlock(&fifo->mutex);
 }
 
 int xgff_clear(xgff_t *fifo)
 {
     xgff_check_fifo_ptr(fifo);
 
-    pthread_mutex_lock(&fifo->mutex);
+    lock(); // pthread_mutex_lock(&fifo->mutex);
     fifo->in  = 0;
     fifo->out = 0;
-    pthread_mutex_unlock(&fifo->mutex);
+    unlock(); // pthread_mutex_unlock(&fifo->mutex);
 }
 
 /**
@@ -104,6 +113,19 @@ int xgff_setCallbacks(xgff_t *fifo, int (*func[])(void *p))
     fifo->footprint_full  = func[0];
     fifo->footprint_75pct = func[1];
     fifo->footprint_50pct = func[2];
+}
+
+int xgff_setLock(xgff_t *fifo, xgff_lockFn lockFn, void *mutex)
+{
+    xgff_check_fifo_ptr(fifo);
+
+    if (fifo->mutex || fifo->lockFn)
+    {
+        printf("the fifo has already have lock contents.\n");
+        return -1;
+    }
+    fifo->mutex  = mutex;
+    fifo->lockFn = lockFn;
 }
 
 bool xgff_34full(xgff_t *fifo)
@@ -125,11 +147,11 @@ int xgff_getItemLen(xgff_t *fifo)
     xgff_check_fifo_ptr(fifo);
 
     size_t len;
-    pthread_mutex_lock(&fifo->mutex);
+    lock(); // pthread_mutex_lock(&fifo->mutex);
     // 此处in可能已经溢出，回到一个较小的数，而out还没溢出
     // 即使遇到这种状况，下面的语句仍然是正确的
     len = fifo->in - fifo->out;
-    pthread_mutex_unlock(&fifo->mutex);
+    unlock(); // pthread_mutex_unlock(&fifo->mutex);
 
     return len;
 }
@@ -138,11 +160,11 @@ int xgff_getLeftLen(xgff_t *fifo)
 {
     size_t left_len;
 
-    pthread_mutex_lock(&fifo->mutex);
+    lock(); // pthread_mutex_lock(&fifo->mutex);
     // 此处in可能已经溢出，回到一个较小的数，而out还没溢出
     // 即使遇到这种状况，下面的语句仍然是正确的
     left_len = fifo->size - (fifo->in - fifo->out);
-    pthread_mutex_unlock(&fifo->mutex);
+    unlock(); // pthread_mutex_unlock(&fifo->mutex);
 
     return left_len;
 }
@@ -153,7 +175,9 @@ int xgff_wr(xgff_t *fifo, const void *buf, size_t len)
 
     // todo 这里为什么不直接使用pthread_mutex_lock()
     int r;
-    r = pthread_mutex_trylock(&fifo->mutex); // 使用这个锁来优先保证写操作
+    // 24.05.14 编译报链接错误？？？
+    // r = pthread_mutex_trylock(&fifo->mutex); // 使用这个锁来优先保证写操作
+    lock(); // pthread_mutex_lock(&fifo->mutex);
 
     size_t lenToCopy;
 
@@ -167,17 +191,17 @@ int xgff_wr(xgff_t *fifo, const void *buf, size_t len)
     /* then put the rest (if any) at the beginning of the buffer */
     memcpy(fifo->data, buf + lenToCopy, len - lenToCopy);
 
-    if (r)
-    {
-        pthread_mutex_lock(&fifo->mutex);
-    }
+    // if (r)
+    // {
+    //     pthread_mutex_lock(&fifo->mutex);
+    // }
     fifo->in += len;
 
     // len = fifo->in - fifo->out;
     // printf("fifo len: %d, fifo_in = %u, fifo_out = %u\n",len,fifo->in,fifo->out);
     size_t left_len = fifo->size - (fifo->in - fifo->out);
 
-    pthread_mutex_unlock(&fifo->mutex);
+    unlock(); // pthread_mutex_unlock(&fifo->mutex);
 
 #if XGFF_SHOW_FOOTPRINT
     show_footprint(fifo);
@@ -203,7 +227,7 @@ int xgff_rd(xgff_t *fifo, void *buf, size_t len)
 {
     xgff_check_fifo_ptr(fifo);
 
-    pthread_mutex_lock(&fifo->mutex);
+    lock(); // pthread_mutex_lock(&fifo->mutex);
     size_t lenToCopy;
 
     // 在用户要求数量和fifo数据量间取较小值
@@ -215,7 +239,7 @@ int xgff_rd(xgff_t *fifo, void *buf, size_t len)
     memcpy(buf + lenToCopy, fifo->data, len - lenToCopy);
     fifo->out += len;
 
-    pthread_mutex_unlock(&fifo->mutex);
+    unlock(); // pthread_mutex_unlock(&fifo->mutex);
 #if XGFF_SHOW_FOOTPRINT
     show_footprint(fifo);
 #endif
@@ -232,7 +256,7 @@ int xgff_getBlockWrInfo(xgff_t *fifo, byte **ptr, size_t *len)
         return -1;
     }
 
-    pthread_mutex_lock(&fifo->mutex);
+    lock(); // pthread_mutex_lock(&fifo->mutex);
     *ptr = fifo->data + shadow_in;
     if (shadow_in > shadow_out)
     {
@@ -260,7 +284,7 @@ int xgff_getBlockRdInfo(xgff_t *fifo, byte **ptr, size_t *len)
         return -1;
     }
 
-    pthread_mutex_lock(&fifo->mutex);
+    lock(); // pthread_mutex_lock(&fifo->mutex);
     *ptr = fifo->data + shadow_out;
     if (shadow_in > shadow_out)
     {
@@ -286,7 +310,7 @@ int xgff_ackBlockWr(xgff_t *fifo, size_t len)
 
     fifo->in += len;
     size_t left_len = fifo->size - (fifo->in - fifo->out);
-    pthread_mutex_unlock(&fifo->mutex);
+    unlock(); // pthread_mutex_unlock(&fifo->mutex);
 
 #if XGFF_SHOW_FOOTPRINT
     show_footprint(fifo);
@@ -312,7 +336,7 @@ int xgff_ackBlockRd(xgff_t *fifo, size_t len)
 
     fifo->out += len;
     size_t left_len = fifo->size - (fifo->in - fifo->out);
-    pthread_mutex_unlock(&fifo->mutex);
+    unlock(); // pthread_mutex_unlock(&fifo->mutex);
 
 #if XGFF_SHOW_FOOTPRINT
     show_footprint(fifo);
