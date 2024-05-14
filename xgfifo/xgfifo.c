@@ -43,6 +43,22 @@
 *******************************************************************************/
 static int show_footprint(xgff_t *fifo);
 
+// 作为xgff_lockFn()的示例，以下是一个依赖POSIX的实现
+#if 0 
+void xgffex_lock(bool lock, void *mutex)
+{
+    pthread_mutex_t *pmutex = (pthread_mutex_t *)(mutex);
+    if (lock)
+    {
+        pthread_mutex_lock(pmutex);
+    }
+    else
+    {
+        pthread_mutex_unlock(pmutex);
+    }
+}
+#endif
+
 /*******************************************************************************
                                   函数实现
 *******************************************************************************/

@@ -14,12 +14,13 @@
 typedef unsigned char byte;
 
 /**
- * @brief 在不同环境下，对于线程同步的处理手段是不一样的，
- *        本模块不含依赖特定环境的代码，
- *        仅提供了一个函数原型，让用户根据使用环境去实现
+ * @brief 本函数用于处理多线程环境下的数据安全问题。
+ *        在不同环境下，对于线程安全的处理手段是不一样的，
+ *        所以仅提供了一个函数原型，让用户根据具体环境去实现。
+ *        源文件中提供了一个依赖POSIX的函数实现作为示例。
  *
  * @param lock true 加锁; false 解锁
- * @param mutex 不同环境对应的线程同步数据结构，例如POSIX下的pthread_mutex_t*
+ * @param mutex 具体环境下的线程安全数据结构，例如POSIX下的pthread_mutex_t*
  */
 typedef void (*xgff_lockFn)(bool lock, void *mutex);
 
